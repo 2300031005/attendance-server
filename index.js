@@ -53,6 +53,21 @@ app.get('/', (req, res) => {
     res.send('RFID Attendance Server is online and running.');
 });
 
+// ADD THIS NEW ENDPOINT TO VIEW THE LOGS
+app.get('/api/get-attendance', (req, res) => {
+  // Try to read the log file
+  fs.readFile('attendance_log.csv', 'utf8', (err, data) => {
+    if (err) {
+      // If the file doesn't exist yet, send a helpful message
+      console.log("Log file not found. It will be created on the first scan.");
+      return res.status(404).send('No attendance has been logged yet. Scan a card first.');
+    }
+    // If the file exists, send its content as plain text
+    res.type('text/plain'); // Tell the browser this is just text
+    res.send(data);
+  });
+});
+
 
 // 6. Start the server and make it listen for incoming requests on the specified port
 app.listen(PORT, () => {
