@@ -7,7 +7,7 @@ const fs = require('fs');
 // 2. Initialize the Express application
 const app = express();
 // Use the port provided by the hosting service (like Render), or default to 3000 for local testing
-const PORT = process.env.PORT || 3000; 
+const PORT = process.env.PORT || 10000; 
 
 // 3. Middleware to parse incoming JSON data from the ESP8266
 // This line is crucial. It tells Express how to understand the {"uid":"..."} data we will send.
