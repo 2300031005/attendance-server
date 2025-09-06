@@ -1,75 +1,82 @@
 // 1. Import necessary libraries
-// 'express' is for creating the web server.
-// 'fs' (File System) is for writing the attendance data to a file.
 const express = require('express');
 const fs = require('fs');
 
 // 2. Initialize the Express application
 const app = express();
-// Use the port provided by the hosting service (like Render), or default to 3000 for local testing
-const PORT = process.env.PORT || 10000; 
+const PORT = process.env.PORT || 10000;
 
-// 3. Middleware to parse incoming JSON data from the ESP8266
-// This line is crucial. It tells Express how to understand the {"uid":"..."} data we will send.
+// 3. Middleware
+// This middleware is for the original single-scan JSON endpoint
 app.use(express.json());
+// >> ADD THIS MIDDLEWARE <<
+// This is for the new batch-sync endpoint, which receives plain text
+app.use(express.text());
 
-// 4. Define the API endpoint that the ESP8266 will send data to
+
+// 4. Endpoint for a single, online scan (still useful for testing)
 app.post('/api/mark-attendance', (req, res) => {
-  // Extract the UID from the body of the incoming request
-  const { uid } = req.body; 
-
-  // Basic validation: Check if a UID was actually sent
+  const { uid } = req.body;
   if (!uid) {
-    console.log("Received a request with no UID.");
     return res.status(400).send('Error: UID is required.');
   }
-
-  // Get the current timestamp. We specify the time zone for India (Asia/Kolkata).
   const timestamp = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
-  
-  // Format the data as a single line for the CSV file: "CARD_UID,DATE,TIME"
   const logEntry = `${uid},${timestamp}\n`;
-  
-  console.log(`Received UID: ${uid}. Logging entry to file.`);
-
-  // Append the new entry to the 'attendance_log.csv' file.
-  // The 'a' flag means "append", so we add to the end of the file instead of overwriting it.
+  console.log(`Received SINGLE UID: ${uid}. Logging entry to file.`);
   fs.appendFile('attendance_log.csv', logEntry, (err) => {
     if (err) {
       console.error('ERROR: Failed to write to log file:', err);
-      // If there was an error saving the file, send an error response back to the ESP8266
       return res.status(500).send('Server error: Failed to log attendance.');
     }
-    
-    // If everything worked, send a success message back to the ESP8266
     console.log("Successfully wrote to attendance_log.csv");
     res.status(200).send('Success: Attendance marked.');
   });
 });
 
-// 5. Add a simple welcome message for the root URL
-// This helps you check if the server is running by visiting the URL in a web browser.
-app.get('/', (req, res) => {
-    res.send('RFID Attendance Server is online and running.');
-});
+// =================================================================
+// >> ADD THIS ENTIRE NEW ENDPOINT FOR OFFLINE SYNCING <<
+// =================================================================
+app.post('/api/sync-logs', (req, res) => {
+  // The raw CSV data is in the request body because we used app.use(express.text())
+  const offlineLogs = req.body;
 
-// ADD THIS NEW ENDPOINT TO VIEW THE LOGS
-app.get('/api/get-attendance', (req, res) => {
-  // Try to read the log file
-  fs.readFile('attendance_log.csv', 'utf8', (err, data) => {
+  if (!offlineLogs || offlineLogs.length === 0) {
+    return res.status(400).send('Error: No log data received for sync.');
+  }
+
+  console.log("--- Received a BATCH of offline logs to sync ---");
+  // We add an extra newline to ensure separation from other logs
+  const dataToAppend = offlineLogs.trim() + '\n';
+
+  // Append the entire block of offline logs to our main log file
+  fs.appendFile('attendance_log.csv', dataToAppend, (err) => {
     if (err) {
-      // If the file doesn't exist yet, send a helpful message
-      console.log("Log file not found. It will be created on the first scan.");
-      return res.status(404).send('No attendance has been logged yet. Scan a card first.');
+      console.error('ERROR: Failed to write synced logs to file:', err);
+      return res.status(500).send('Server error: Failed to save synced logs.');
     }
-    // If the file exists, send its content as plain text
-    res.type('text/plain'); // Tell the browser this is just text
-    res.send(data);
+
+    console.log("Successfully synced and saved offline logs.");
+    // Sending a 200 OK tells the ESP8266 it is safe to delete its local file
+    res.status(200).send('Success: Offline logs synced.');
   });
 });
 
 
-// 6. Start the server and make it listen for incoming requests on the specified port
+// 5. Root URL, view logs, and server start (no changes needed here)
+app.get('/', (req, res) => {
+  res.send('RFID Attendance Server (Offline Sync Ready) is online.');
+});
+
+app.get('/api/get-attendance', (req, res) => {
+  fs.readFile('attendance_log.csv', 'utf8', (err, data) => {
+    if (err) {
+      return res.status(404).send('No attendance has been logged yet.');
+    }
+    res.type('text/plain');
+    res.send(data);
+  });
+});
+
 app.listen(PORT, () => {
   console.log(`Server is now listening on port ${PORT}`);
 });
